@@ -410,9 +410,9 @@ function PaymentSection({
   // Custom deeply linked URLs for common UPI apps using Admin settings
   const encodedName = encodeURIComponent(merchantName);
 
-  // Clean intent URL without 'tr' or 'mc' to prevent P2P bank verification failures 
-  // (which causes "Something went wrong" on PhonePe/GPay for non-business accounts)
-  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
+  // Clean intent URL formatted exactly as per NPCI specs for P2P transfer
+  // Removed spaces from 'tn' and added basic 'tr' to prevent parsing errors in some apps
+  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order_${orderId}&tr=${orderId}123`;
 
   const upiUrl = `upi://pay?${intentParams}`;
   const gpayUrl = `tez://upi/pay?${intentParams}`;
