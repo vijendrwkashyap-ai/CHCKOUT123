@@ -41,10 +41,10 @@ async function getDb(): Promise<Database> {
             const initialDb: Database = {
                 orders: [],
                 settings: {
-                    upiId: "merchant@upi",
-                    merchantName: "YourBrand",
+                    upiId: "8512076449@ptsbi",
+                    merchantName: "RITIK",
                     shopifyDomain: "",
-                    shopifyAccessToken: ""
+                    shopifyAccessToken: "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"
                 }
             };
             await fs.writeFile(dbPath, JSON.stringify(initialDb, null, 2));
@@ -136,3 +136,5 @@ export async function updateSettings(newSettings: Partial<Settings>) {
     await saveDb(db);
     return db.settings;
 }
+
+
