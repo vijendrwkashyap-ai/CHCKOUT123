@@ -409,10 +409,13 @@ function PaymentSection({
 
   // Custom deeply linked URLs for common UPI apps using Admin settings
   const encodedName = encodeURIComponent(merchantName);
-  const upiUrl = `upi://pay?pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
-  const gpayUrl = `tez://upi/pay?pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
-  const phonepeUrl = `phonepe://pay?pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
-  const paytmUrl = `paytmmp://pay?pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
+  // Added &tr, &mc=0000, &mode=02 (Intent), and &purpose=00 to avoid 'Gallery QR' 2000 limit issue on PhonePe
+  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}&tr=${orderId}&mc=0000&mode=02&purpose=00`;
+
+  const upiUrl = `upi://pay?${intentParams}`;
+  const gpayUrl = `tez://upi/pay?${intentParams}`;
+  const phonepeUrl = `phonepe://pay?${intentParams}`;
+  const paytmUrl = `paytmmp://pay?${intentParams}`;
 
   return (
     <motion.div
@@ -592,3 +595,4 @@ function SuccessSection({ email, orderId }: { email: string, orderId: string | n
     </motion.div>
   );
 }
+
