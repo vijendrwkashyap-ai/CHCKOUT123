@@ -409,8 +409,10 @@ function PaymentSection({
 
   // Custom deeply linked URLs for common UPI apps using Admin settings
   const encodedName = encodeURIComponent(merchantName);
-  // Added &tr, &mc=0000, &mode=02 (Intent), and &purpose=00 to avoid 'Gallery QR' 2000 limit issue on PhonePe
-  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}&tr=${orderId}&mc=0000&mode=02&purpose=00`;
+
+  // Clean intent URL without 'tr' or 'mc' to prevent P2P bank verification failures 
+  // (which causes "Something went wrong" on PhonePe/GPay for non-business accounts)
+  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
 
   const upiUrl = `upi://pay?${intentParams}`;
   const gpayUrl = `tez://upi/pay?${intentParams}`;
@@ -595,4 +597,3 @@ function SuccessSection({ email, orderId }: { email: string, orderId: string | n
     </motion.div>
   );
 }
-
