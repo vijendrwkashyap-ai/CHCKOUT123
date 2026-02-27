@@ -410,14 +410,14 @@ function PaymentSection({
   // Custom deeply linked URLs for common UPI apps using Admin settings
   const encodedName = encodeURIComponent(merchantName);
 
-  // Clean intent URL formatted exactly as per NPCI specs for P2P transfer
-  // Removed spaces from 'tn' and added basic 'tr' to prevent parsing errors in some apps
-  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order_${orderId}&tr=${orderId}123`;
+  // Cleaned UPI Link: Basic syntax without strict `tr` or specific intent flags that cause P2P rejection.
+  // We use `upi://pay` universally instead of app-specific schemas which trigger strict verification.
+  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
 
   const upiUrl = `upi://pay?${intentParams}`;
-  const gpayUrl = `tez://upi/pay?${intentParams}`;
-  const phonepeUrl = `phonepe://pay?${intentParams}`;
-  const paytmUrl = `paytmmp://pay?${intentParams}`;
+  const gpayUrl = `upi://pay?${intentParams}`;
+  const phonepeUrl = `upi://pay?${intentParams}`;
+  const paytmUrl = `upi://pay?${intentParams}`;
 
   return (
     <motion.div
@@ -597,3 +597,4 @@ function SuccessSection({ email, orderId }: { email: string, orderId: string | n
     </motion.div>
   );
 }
+
