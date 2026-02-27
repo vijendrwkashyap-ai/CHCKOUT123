@@ -27,7 +27,10 @@ interface Database {
     settings: Settings;
 }
 
-const dbPath = path.join(process.cwd(), 'orders.json');
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true' || process.env.VERCEL_ENV;
+const dbPath = isVercel
+    ? path.join('/tmp', 'orders.json')
+    : path.join(process.cwd(), 'orders.json');
 
 async function getDb(): Promise<Database> {
     try {
