@@ -29,6 +29,7 @@ export default function CheckoutPage() {
   // Dynamic Settings from server
   const [upiId, setUpiId] = useState("merchant@upi");
   const [merchantName, setMerchantName] = useState("YourBrand");
+  const [razorpayEnabled, setRazorpayEnabled] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -83,6 +84,7 @@ export default function CheckoutPage() {
         setFinalAmount(resData.finalAmount);
         setUpiId(resData.upiId || "merchant@upi");
         setMerchantName(resData.merchantName || "Store Name");
+        setRazorpayEnabled(resData.razorpayEnabled || false);
         setStep("payment");
       } else {
         setValidationError("Failed to create order. Please try again.");
@@ -258,6 +260,9 @@ export default function CheckoutPage() {
                 orderId={orderId}
                 upiId={upiId}
                 merchantName={merchantName}
+                razorpayEnabled={razorpayEnabled}
+                customerPhone={formData.phone}
+                customerEmail={formData.email}
                 onBack={() => setStep("details")}
                 onSuccess={() => setStep("success")}
               />
@@ -359,6 +364,9 @@ function PaymentSection({
   orderId,
   upiId,
   merchantName,
+  razorpayEnabled,
+  customerPhone,
+  customerEmail,
   onBack,
   onSuccess
 }: {
@@ -366,10 +374,14 @@ function PaymentSection({
   orderId: string,
   upiId: string,
   merchantName: string,
+  razorpayEnabled: boolean,
+  customerPhone: string,
+  customerEmail: string,
   onBack: () => void,
   onSuccess: () => void
 }) {
   const [timeLeft, setTimeLeft] = useState(600);
+  const [isProcessingRzp, setIsProcessingRzp] = useState(false);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -407,17 +419,87 @@ function PaymentSection({
   }, [orderId, onSuccess]);
 
 
-  // Custom deeply linked URLs for common UPI apps using Admin settings
-  const encodedName = encodeURIComponent(merchantName);
+  useEffect(() => {
+    if (razorpayEnabled) {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      document.body.appendChild(script);
 
-  // Cleaned UPI Link: Basic syntax without strict `tr` or specific intent flags that cause P2P rejection.
-  // We use `upi://pay` universally instead of app-specific schemas which trigger strict verification.
-  const intentParams = `pa=${upiId}&pn=${encodedName}&am=${finalAmount}&cu=INR&tn=Order${orderId}`;
+      // Auto open after a short delay
+      const t = setTimeout(() => { if (!isProcessingRzp) openRazorpay(); }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [razorpayEnabled]);
 
-  const upiUrl = `upi://pay?${intentParams}`;
-  const gpayUrl = `upi://pay?${intentParams}`;
-  const phonepeUrl = `upi://pay?${intentParams}`;
-  const paytmUrl = `upi://pay?${intentParams}`;
+  const openRazorpay = async () => {
+    if (!(window as any).Razorpay) {
+      alert("Razorpay SDK failed to load. Are you online?");
+      return;
+    }
+
+    setIsProcessingRzp(true);
+    try {
+      const res = await fetch('/api/rzp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: finalAmount, receipt: `rcpt_${orderId}` })
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error);
+
+      const options = {
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
+        name: merchantName,
+        description: "Order Checkout",
+        order_id: data.id,
+        prefill: {
+          contact: customerPhone || "9999999999",
+          email: customerEmail || "test@test.com",
+          method: "upi"
+        },
+        handler: async function (response: any) {
+          const verifyRes = await fetch('/api/rzp-verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              orderId: orderId
+            })
+          });
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            onSuccess();
+          } else {
+            alert("Payment Verification Failed!");
+            setIsProcessingRzp(false);
+          }
+        },
+        theme: {
+          color: "#4f46e5"
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingRzp(false);
+          }
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', function (response: any) {
+        alert("Payment failed: " + response.error.description);
+      });
+      rzp.open();
+    } catch (e) {
+      alert("Could not initiate payment gateway.");
+      setIsProcessingRzp(false);
+    }
+  };
 
   return (
     <motion.div
@@ -426,117 +508,117 @@ function PaymentSection({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.4, type: "spring", bounce: 0.2 }}
-      className="space-y-6"
+      className="space-y-4"
     >
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-indigo-600 font-medium transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Information
-      </button>
+      <div className="w-full max-w-md mx-auto">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-indigo-600 font-medium transition-colors mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Information
+        </button>
 
-      <div className="bg-white rounded-3xl border-2 border-indigo-100 p-6 sm:p-8 shadow-xl shadow-indigo-50/50 text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-2 bg-indigo-50">
-          <motion.div
-            className="h-full bg-indigo-600"
-            animate={{ width: ["0%", "100%"] }}
-            transition={{ duration: 600, ease: "linear" }}
-          />
-        </div>
-
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 mt-4">Scan & Pay to Confirm</h2>
-        <p className="text-gray-500 text-sm mb-6">
-          System continuously checks for payment. Once confirmed, you will be redirected automatically.
-        </p>
-
-        {/* Amount Box */}
-        <div className="bg-indigo-50 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-center mb-6">
-          <p className="text-sm text-indigo-800 font-medium mb-1">Exact Amount to Pay</p>
-          <div className="text-3xl sm:text-4xl font-extrabold text-indigo-900 tracking-tight">
-            ₹{finalAmount.toFixed(2)}
-          </div>
-        </div>
-
-        {/* App Buttons (Visible on Mobile and Desktop now for direct clicks) */}
-        <div className="mb-8 space-y-3 w-full">
-          <p className="text-sm font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100 text-left">Click to Pay directly</p>
-
-          <a
-            href={gpayUrl}
-            className="w-full py-3.5 px-5 bg-white border border-gray-200 rounded-xl font-medium text-gray-800 shadow-sm flex items-center justify-between hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 flex items-center justify-center p-1">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg" alt="Google Pay" className="w-full h-full object-contain" />
+        {/* UPI Payments Card (Matches user screenshot) */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_2px_10px_rgba(0,0,0,0.04)] overflow-hidden mb-4">
+          <div className="p-4 sm:p-5 flex items-center justify-between border-b border-gray-50">
+            <div className="flex items-center gap-3 text-gray-900 font-bold">
+              <div className="w-6 h-6 rounded flex items-center justify-center">
+                <img src="https://cdn.iconscout.com/icon/free/png-256/free-upi-2085056-1747946.png" className="w-full h-full object-contain opacity-80" alt="UPI" />
               </div>
-              <span className="font-semibold text-base sm:text-lg">Google Pay</span>
+              <span className="text-[17px]">UPI</span>
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-          </a>
-
-          <a
-            href={phonepeUrl}
-            className="w-full py-3.5 px-5 bg-white border border-gray-200 rounded-xl font-medium text-gray-800 shadow-sm flex items-center justify-between hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 flex items-center justify-center p-1">
-                <img src="https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png" alt="PhonePe" className="w-full h-full object-contain scale-[1.5]" />
-              </div>
-              <span className="font-semibold text-base sm:text-lg">PhonePe</span>
+            <div className="flex items-center gap-2">
+              <span className="line-through text-gray-400 text-xs sm:text-sm font-medium">₹{(finalAmount + (500 - finalAmount)).toFixed(0)}</span>
+              <span className="font-extrabold text-gray-900 text-base sm:text-lg">₹{finalAmount.toFixed(0)}</span>
+              <ChevronRight className="w-5 h-5 text-gray-500 -rotate-90 origin-center" />
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-          </a>
-
-          <a
-            href={paytmUrl}
-            className="w-full py-3.5 px-5 bg-white border border-gray-200 rounded-xl font-medium text-gray-800 shadow-sm flex items-center justify-between hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 flex items-center justify-center p-1">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Paytm_Logo_%28standalone%29.svg" alt="Paytm" className="w-full h-full object-contain" />
-              </div>
-              <span className="font-semibold text-base sm:text-lg">Paytm</span>
-            </div>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-          </a>
-
-          <a
-            href={upiUrl}
-            className="w-full py-4 mt-2 bg-gray-900 hover:bg-black border border-gray-800 rounded-xl font-semibold text-white shadow-lg flex items-center justify-center gap-2 transition-colors"
-          >
-            <Smartphone className="w-5 h-5" />
-            Other UPI Apps
-          </a>
-
-          <div className="flex items-center w-full my-6">
-            <div className="flex-1 h-px bg-gray-200"></div>
-            <span className="px-4 text-xs font-bold text-gray-400 tracking-wider">OR SCAN MANUALLY</span>
-            <div className="flex-1 h-px bg-gray-200"></div>
           </div>
 
-          {/* QR Code */}
-          <div className="p-5 bg-white rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] border border-gray-100 flex justify-center mb-6 max-w-[240px] mx-auto">
-            <QRCodeSVG
-              value={upiUrl}
-              size={180}
-              level="H"
-              includeMargin={true}
-            />
+          <div className="p-4 sm:p-5 pt-3">
+            {/* Green Discount Banner */}
+            <div className="bg-[#f0fdf4] text-[#16a34a] text-xs sm:text-sm font-bold text-center py-2.5 rounded-lg border border-[#bbf7d0] mb-5 font-sans">
+              Save ₹{(500 - finalAmount).toFixed(0)} with UPI
+            </div>
+
+            {/* Horizontal Grid of 4 Apps */}
+            <div className="grid grid-cols-4 gap-2 sm:gap-4">
+              <button
+                disabled={isProcessingRzp}
+                onClick={() => razorpayEnabled ? openRazorpay() : window.location.assign(`upi://pay?pa=${upiId}&am=${finalAmount}&cu=INR&tn=Order${orderId}`)}
+                className="flex flex-col items-center justify-start gap-2 p-2 px-1 border border-gray-100 rounded-xl hover:border-indigo-100 hover:shadow-md transition-all active:scale-95 bg-white shadow-sm"
+              >
+                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center p-1">
+                  <img src="https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png" className="w-full h-full object-contain scale-[1.3]" alt="PhonePe" />
+                </div>
+                <span className="text-[10px] sm:text-xs text-gray-600 font-medium text-center leading-tight">Phone pe</span>
+              </button>
+
+              <button
+                disabled={isProcessingRzp}
+                onClick={() => razorpayEnabled ? openRazorpay() : window.location.assign(`upi://pay?pa=${upiId}&am=${finalAmount}&cu=INR&tn=Order${orderId}`)}
+                className="flex flex-col items-center justify-start gap-2 p-2 px-1 border border-gray-100 rounded-xl hover:border-indigo-100 hover:shadow-md transition-all active:scale-95 bg-white shadow-sm"
+              >
+                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center p-2">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Paytm_Logo_%28standalone%29.svg" className="w-full h-full object-contain" alt="Paytm" />
+                </div>
+                <span className="text-[10px] sm:text-xs text-gray-600 font-medium text-center leading-tight">Paytm</span>
+              </button>
+
+              <button
+                disabled={isProcessingRzp}
+                onClick={() => razorpayEnabled ? openRazorpay() : window.location.assign(`upi://pay?pa=${upiId}&am=${finalAmount}&cu=INR&tn=Order${orderId}`)}
+                className="flex flex-col items-center justify-start gap-2 p-2 px-1 border border-gray-100 rounded-xl hover:border-indigo-100 hover:shadow-md transition-all active:scale-95 bg-white shadow-sm"
+              >
+                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center p-1.5">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/c/c5/Google_Pay_%28GPay%29_Logo.svg" className="w-full h-full object-contain scale-110" alt="GPay" />
+                </div>
+                <span className="text-[10px] sm:text-xs text-gray-600 font-medium text-center leading-tight">Gpay</span>
+              </button>
+
+              <button
+                disabled={isProcessingRzp}
+                onClick={() => razorpayEnabled ? openRazorpay() : window.location.assign(`upi://pay?pa=${upiId}&am=${finalAmount}&cu=INR&tn=Order${orderId}`)}
+                className="flex flex-col items-center justify-start gap-2 p-2 px-1 border border-gray-100 rounded-xl hover:border-indigo-100 hover:shadow-md transition-all active:scale-95 bg-white shadow-sm"
+              >
+                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-400 font-light text-2xl -mt-1">+</div>
+                </div>
+                <span className="text-[10px] sm:text-xs text-gray-600 font-medium text-center leading-tight sm:whitespace-nowrap">Add UPI ID</span>
+              </button>
+            </div>
+
+            {isProcessingRzp ? (
+              <div className="mt-5 pt-4 border-t border-gray-100 flex justify-center text-[#4f46e5] text-xs font-bold items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Opening Razorpay Secure Gateway...
+              </div>
+            ) : (
+              <div className="mt-5 pt-4 border-t border-gray-100 flex justify-center text-xs text-gray-400 gap-1 items-center font-medium">
+                Awaiting Confirmation... <Clock className="w-3 h-3 ml-1" /> {formatTime(timeLeft)}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-sm font-medium">
-          <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2.5 rounded-full w-full sm:w-auto justify-center">
-            <Clock className="w-4 h-4" />
-            <span>Expires in {formatTime(timeLeft)}</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2.5 rounded-full w-full sm:w-auto justify-center">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Waiting for payment...</span>
+        {/* COD Option Card */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_2px_10px_rgba(0,0,0,0.04)] overflow-hidden mb-6 opacity-60 cursor-not-allowed">
+          <div className="p-4 sm:p-5 flex items-center justify-between">
+            <div className="flex items-center gap-4 text-gray-900 font-medium">
+              <div className="w-7 h-7 border border-gray-300 rounded flex items-center justify-center shrink-0">
+                <span className="text-gray-400 text-xs font-bold">₹</span>
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-[15px] font-semibold text-gray-800">Cash on delivery</span>
+                <span className="text-xs text-gray-500 mt-0.5">+₹50 COD charge included</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-gray-900 text-base sm:text-lg">₹{(finalAmount + 50).toFixed(0)}</span>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </div>
           </div>
         </div>
+
       </div>
     </motion.div>
   );
@@ -597,4 +679,3 @@ function SuccessSection({ email, orderId }: { email: string, orderId: string | n
     </motion.div>
   );
 }
-
